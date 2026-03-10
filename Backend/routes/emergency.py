@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 from decimal import Decimal
-from typing import List
+from typing import List, Dict
 from DB.client import supabase
 from graph.emergency_graph import graph_app
 
@@ -44,6 +44,17 @@ def serialize_incident(incident: dict) -> dict:
         else:
             serialized[k] = v
     return serialized
+# ---------------------------
+# GET /emergency/all  <-- NEW
+# ---------------------------
+@router.get("/all", response_model=List[IncidentResponse])
+async def get_all_incidents():
+    result = supabase.table("incidents").select("*").order("created_at", desc=True).execute()
+    if not result.data:
+        return []  # no incidents yet
+
+    incidents = [serialize_incident(i) for i in result.data]
+    return [IncidentResponse(**i) for i in incidents]
 
 # ---------------------------
 # GET /emergency/{id}
@@ -54,9 +65,9 @@ async def get_incident(incident_id: int):
     if not result.data:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    incident = result.data[0]
-    incident = serialize_incident(incident)
+    incident = serialize_incident(result.data[0])
     return IncidentResponse(**incident)
+
 
 # ---------------------------
 # POST /emergency/report

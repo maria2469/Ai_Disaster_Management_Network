@@ -78,7 +78,7 @@ const EmergencyAlert = () => {
             </Card>
 
             {/* Map */}
-            <MapView markers={markers} className="h-48" showUserLocation={false} />
+            <MapView className="h-48" />
 
             {/* Actions */}
             <div className="space-y-3">
@@ -108,7 +108,7 @@ const EmergencyAlert = () => {
             <p className="text-sm text-muted-foreground">
               Navigate to the emergency location.<br />Stay safe and follow protocols.
             </p>
-            <MapView markers={markers} className="h-48 w-full" showUserLocation={false} />
+            <MapView className="h-48 w-full" />
             <Button variant="outline" size="lg" onClick={() => setAccepted(false)}>
               Cancel Response
             </Button>

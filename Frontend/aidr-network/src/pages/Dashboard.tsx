@@ -7,15 +7,54 @@ import Navbar from "@/components/Navbar";
 import EmergencyCard from "@/components/EmergencyCard";
 import { AlertTriangle, Radio, MapPin } from "lucide-react";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 
-const mockIncidents = [
-  { id: "1", type: "Building Fire", distance: "120m", time: "2 min ago", status: "critical" as const, description: "Apartment fire on 3rd floor, person trapped" },
-  { id: "2", type: "Medical Emergency", distance: "450m", time: "8 min ago", status: "active" as const, description: "Person collapsed on Main Street" },
-  { id: "3", type: "Flood Warning", distance: "1.2km", time: "15 min ago", status: "pending" as const, description: "Water rising near riverside park area" },
-];
+// Backend response type
+interface BackendIncident {
+  id: number;
+  created_at: string;
+  message: string;
+  latitude: number;
+  longitude: number;
+  type: string;
+  status: "critical" | "active" | "pending" | "resolved";
+}
+
+// UI-friendly type
+interface Incident {
+  id: number;
+  type: string;
+  distance: string;      // For display (optional)
+  time: string;          // Formatted from created_at
+  status: "critical" | "active" | "pending" | "resolved";
+  description: string;   // From message
+}
+
+// Fetch incidents from backend
+const fetchIncidents = async (): Promise<Incident[]> => {
+  const res = await fetch("http://localhost:8001/emergency/all");
+  if (!res.ok) throw new Error("Failed to fetch incidents");
+  const data: BackendIncident[] = await res.json();
+
+  // Map backend data to UI-friendly structure
+  return data.map((i) => ({
+    id: i.id,
+    type: i.type,
+    status: i.status,
+    distance: "N/A", // calculate based on user location if available
+    time: new Date(i.created_at).toLocaleString(),
+    description: i.message,
+  }));
+};
 
 const Dashboard = () => {
   const [volunteerMode, setVolunteerMode] = useState(true);
+
+  const { data: incidents = [], isLoading, isError } = useQuery<Incident[]>({
+    queryKey: ["incidents"],
+    queryFn: fetchIncidents,
+    refetchInterval: 30000, // refresh every 30s
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -68,7 +107,10 @@ const Dashboard = () => {
                   Toggle your availability for emergency alerts
                 </p>
                 <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <span className={`text-sm font-semibold ${volunteerMode ? "text-success" : "text-muted-foreground"}`}>
+                  <span
+                    className={`text-sm font-semibold ${volunteerMode ? "text-success" : "text-muted-foreground"
+                      }`}
+                  >
                     {volunteerMode ? "Available" : "Unavailable"}
                   </span>
                   <Switch checked={volunteerMode} onCheckedChange={setVolunteerMode} />
@@ -87,7 +129,7 @@ const Dashboard = () => {
               <CardContent>
                 <div className="flex gap-4">
                   <div className="text-center">
-                    <p className="text-2xl font-bold text-primary">3</p>
+                    <p className="text-2xl font-bold text-primary">{incidents.length}</p>
                     <p className="text-xs text-muted-foreground">Active</p>
                   </div>
                   <div className="text-center">
@@ -107,11 +149,15 @@ const Dashboard = () => {
           <div>
             <h2 className="mb-3 text-lg font-semibold text-foreground">Recent Incidents</h2>
             <div className="space-y-3">
-              {mockIncidents.map((incident) => (
-                <Link to="/alerts" key={incident.id}>
-                  <EmergencyCard {...incident} />
-                </Link>
-              ))}
+              {isLoading && <p>Loading incidents...</p>}
+              {isError && <p className="text-red-600">Failed to load incidents.</p>}
+              {!isLoading &&
+                !isError &&
+                incidents.map((incident) => (
+                  <Link to={`/emergency/${incident.id}`} key={incident.id}>
+                    <EmergencyCard {...incident} />
+                  </Link>
+                ))}
             </div>
           </div>
         </motion.div>

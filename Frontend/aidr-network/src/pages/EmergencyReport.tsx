@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import Navbar from "@/components/Navbar";
@@ -8,14 +8,81 @@ import { motion, AnimatePresence } from "framer-motion";
 
 type ReportState = "input" | "sending" | "sent";
 
+interface ReportResponse {
+  status: string;
+  incident_id: number;
+  emergency_type: string;
+  nearby_volunteers: {
+    id: number;
+    name: string;
+    phone_number: string;
+    distance_km: number;
+  }[];
+}
+
 const EmergencyReport = () => {
   const [state, setState] = useState<ReportState>("input");
   const [text, setText] = useState("");
   const [recording, setRecording] = useState(false);
+  const [responseData, setResponseData] = useState<ReportResponse | null>(null);
 
-  const handleSend = () => {
+  // User location
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Request live location once
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setLatitude(position.coords.latitude);
+        setLongitude(position.coords.longitude);
+      },
+      (error) => {
+        console.error("Error getting location:", error);
+        setLocationError("Please allow location access to send an emergency.");
+      },
+      { enableHighAccuracy: true }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId); // cleanup
+  }, []);
+
+  const handleSend = async () => {
+    if (latitude === null || longitude === null) {
+      alert("Waiting for exact location. Please allow location access.");
+      return;
+    }
+
     setState("sending");
-    setTimeout(() => setState("sent"), 2000);
+    try {
+      const res = await fetch("http://localhost:8001/emergency/report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: text || "Voice input emergency",
+          lat: latitude,
+          lon: longitude,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to send emergency");
+
+      const data: ReportResponse = await res.json();
+      setResponseData(data);
+      setState("sent");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to send emergency. Try again.");
+      setState("input");
+    }
   };
 
   return (
@@ -40,11 +107,10 @@ const EmergencyReport = () => {
               <div className="flex justify-center">
                 <button
                   onClick={() => setRecording(!recording)}
-                  className={`flex h-24 w-24 items-center justify-center rounded-full transition-all ${
-                    recording
+                  className={`flex h-24 w-24 items-center justify-center rounded-full transition-all ${recording
                       ? "bg-primary text-primary-foreground emergency-pulse"
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  }`}
+                    }`}
                 >
                   {recording ? <MicOff className="h-10 w-10" /> : <Mic className="h-10 w-10" />}
                 </button>
@@ -67,8 +133,18 @@ const EmergencyReport = () => {
                   <MapPin className="h-4 w-4 text-success" />
                   <span className="text-sm font-medium text-foreground">Location detected</span>
                 </div>
-                <p className="text-xs text-muted-foreground mb-2">123 Main Street, City Center</p>
-                <MapView className="h-32" />
+                <p className="text-xs text-muted-foreground mb-2">
+                  {latitude && longitude
+                    ? `Lat: ${latitude.toFixed(5)}, Lon: ${longitude.toFixed(5)}`
+                    : locationError || "Detecting location..."}
+                </p>
+
+                {/* Pass live coordinates to MapView */}
+                <MapView
+                  latitude={latitude}
+                  longitude={longitude}
+                  className="h-48 w-full"
+                />
               </div>
 
               <Button
@@ -76,7 +152,7 @@ const EmergencyReport = () => {
                 size="xl"
                 className="w-full"
                 onClick={handleSend}
-                disabled={!text && !recording}
+                disabled={!text && !recording || latitude === null || longitude === null}
               >
                 🚨 SEND EMERGENCY ALERT
               </Button>
@@ -111,7 +187,11 @@ const EmergencyReport = () => {
               <p className="text-center text-sm text-muted-foreground">
                 Nearby responders are being notified.<br />Stay calm and stay safe.
               </p>
-              <p className="text-sm font-medium text-success">3 responders notified successfully</p>
+              {responseData && (
+                <p className="text-sm font-medium text-success">
+                  {responseData.nearby_volunteers.length} responders notified successfully
+                </p>
+              )}
               <Button variant="secondary" size="lg" onClick={() => setState("input")}>
                 Report Another Emergency
               </Button>
