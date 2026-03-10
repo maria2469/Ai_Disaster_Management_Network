@@ -7,7 +7,7 @@ export default function EmergencyPage() {
     const alarmRef = useRef(null);
 
     useEffect(() => {
-        fetch(`http://localhost:3000/emergency/${id}`)  // your FastAPI port
+        fetch(`http://localhost:8001/emergency/${id}`) // your FastAPI port
             .then(res => res.json())
             .then(data => setIncident(data))
             .catch(err => console.error("Failed to fetch incident:", err));
@@ -15,7 +15,7 @@ export default function EmergencyPage() {
 
     useEffect(() => {
         if (incident) {
-            alarmRef.current = new Audio("/alarm.mp3");
+            alarmRef.current = new Audio("/alarm.mp3"); // Ensure this file exists in your public folder
             alarmRef.current.loop = true;
             alarmRef.current.play().catch(() => console.log("Autoplay prevented"));
         }
