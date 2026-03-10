@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-dotenv
+supabase
+langchain
+langchain-groq
+pydantic
+websockets
+langgraph
+dotenv
+langchain_core
+psycopg2-binary
