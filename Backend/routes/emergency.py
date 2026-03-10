@@ -1,10 +1,11 @@
 import logging
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 from decimal import Decimal
+from typing import List
 from DB.client import supabase
-import json
+from graph.emergency_graph import graph_app
 
 router = APIRouter(prefix="/emergency")
 
@@ -21,8 +22,17 @@ class IncidentReport(BaseModel):
     type: str = "general"
     status: str = "active"
 
+class IncidentResponse(BaseModel):
+    id: int
+    created_at: str
+    message: str
+    latitude: float
+    longitude: float
+    type: str
+    status: str
+
 # ---------------------------
-# Serialize JSON-unfriendly types
+# Helper: serialize JSON-unfriendly types
 # ---------------------------
 def serialize_incident(incident: dict) -> dict:
     serialized = {}
@@ -38,45 +48,50 @@ def serialize_incident(incident: dict) -> dict:
 # ---------------------------
 # GET /emergency/{id}
 # ---------------------------
-@router.get("/{incident_id}")
+@router.get("/{incident_id}", response_model=IncidentResponse)
 async def get_incident(incident_id: int):
     result = supabase.table("incidents").select("*").eq("id", incident_id).execute()
     if not result.data:
-        return {"error": "Incident not found"}
+        raise HTTPException(status_code=404, detail="Incident not found")
 
-    incident = result.data
-    if isinstance(incident, bytes):
-        incident = json.loads(incident.decode("utf-8"))
-    elif isinstance(incident, list):
-        incident = incident[0]
-
+    incident = result.data[0]
     incident = serialize_incident(incident)
-
-    return {
-        "id": incident.get("id"),
-        "created_at": incident.get("created_at"),
-        "message": incident.get("message"),
-        "latitude": incident.get("latitude"),
-        "longitude": incident.get("longitude"),
-        "type": incident.get("type"),
-        "status": incident.get("status")
-    }
+    return IncidentResponse(**incident)
 
 # ---------------------------
 # POST /emergency/report
 # ---------------------------
 @router.post("/report")
 async def report_incident(report: IncidentReport):
-    now = datetime.utcnow().isoformat()  # convert datetime to string
-
-    new_incident = {
+    # Initial state for LangGraph workflow
+    initial_state = {
         "message": report.message,
         "latitude": report.lat,
         "longitude": report.lon,
-        "type": report.type,
-        "status": report.status,
-        "created_at": now
+        "emergency_type": "",   # will be classified
+        "incident_id": 0,       # will be set in store node
+        "nearby_volunteers": []
     }
 
-    result = supabase.table("incidents").insert(new_incident).execute()
-    return {"status": "success", "data": result.data}
+    # Run the workflow
+    final_state = graph_app.invoke(initial_state)
+
+    # Prepare response
+    volunteers_info: List[Dict] = [
+        {
+            "id": v["id"],
+            "name": v["name"],
+            "phone_number": v["phone_number"],
+            "distance_km": round(
+                ((report.lat - v["latitude"])**2 + (report.lon - v["longitude"])**2)**0.5, 2
+            )
+        }
+        for v in final_state["nearby_volunteers"]
+    ]
+
+    return {
+        "status": "success",
+        "incident_id": final_state["incident_id"],
+        "emergency_type": final_state["emergency_type"],
+        "nearby_volunteers": volunteers_info
+    }

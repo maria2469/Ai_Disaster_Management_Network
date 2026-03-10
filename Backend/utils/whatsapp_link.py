@@ -2,8 +2,7 @@ import urllib.parse
 
 FRONTEND_URL = "http://localhost:8000/emergency"
 
-def generate_whatsapp_link(phone, incident_id, message, lat, lon):
-
+def generate_whatsapp_link(phone: str, incident_id: int, message: str, lat: float, lon: float) -> str:
     text = f"""
 🚨 EMERGENCY ALERT 🚨
 
@@ -20,7 +19,5 @@ https://www.google.com/maps?q={lat},{lon}
 
 Respond quickly if you can help.
 """
-
     encoded_text = urllib.parse.quote(text)
-
     return f"https://wa.me/{phone}?text={encoded_text}"
