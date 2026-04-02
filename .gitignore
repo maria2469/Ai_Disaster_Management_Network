@@ -46,10 +46,10 @@ dist-ssr/
 *.local
 
 # Frontend specific
-Frontend/aidr-network/node_modules/
-Frontend/aidr-network/dist/
-Frontend/aidr-network/dist-ssr/
-
+Frontend/node_modules/
+Frontend/dist/
+Frontend/dist-ssr/
+Frontend/.env
 # =========================
 # 🔹 EDITORS / IDE
 # =========================
