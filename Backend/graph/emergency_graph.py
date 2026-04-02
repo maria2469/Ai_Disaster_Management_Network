@@ -1,105 +1,138 @@
-from datetime import datetime
+# graph/emergency_graph.py
+import math
+import asyncio
+from datetime import datetime, timezone
+from typing import List
+from typing_extensions import TypedDict
 
 from langgraph.graph import StateGraph, START, END
-from typing_extensions import TypedDict
-from Agents.Emergency_classsifier import classify_emergency_node
-from DB.client import supabase
-from routes.ws_broadcast import broadcast
-from utils.whatsapp_link import generate_whatsapp_link
-import asyncio
-import math
 
-# ---------------------------
-# Typed state
-# ---------------------------
+from agents.emergency_classifier import classify_emergency
+from db.client import supabase
+from websocket.manager import broadcast
+from utils.whatsapp import send_whatsapp_alert
+
+
+# ──────────────────────────────────────────────
+# State definition
+# ──────────────────────────────────────────────
+
 class EmergencyState(TypedDict):
     message: str
     latitude: float
     longitude: float
-    emergency_type: str
-    incident_id: int
-    nearby_volunteers: list
+    emergency_type: str         # filled by classify_node
+    incident_id: int            # filled by store_incident_node
+    nearby_volunteers: List[dict]  # filled by find_nearby_volunteers_node
 
-workflow = StateGraph(EmergencyState)
 
-# ---------------------------
-# Node: classify emergency
-# ---------------------------
+# ──────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return great-circle distance in kilometres between two coordinates."""
+    R = 6371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi    = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+# ──────────────────────────────────────────────
+# Node 1 — classify the emergency message
+# ──────────────────────────────────────────────
+
 def classify_node(state: EmergencyState) -> EmergencyState:
-    state["emergency_type"] = classify_emergency_node(state["message"])
+    state["emergency_type"] = classify_emergency(state["message"])
     return state
 
-# ---------------------------
-# Node: store incident
-# ---------------------------
-def store_incident_node(state: EmergencyState) -> EmergencyState:
 
-    data = {
-        "message": state["message"],
-        "latitude": state["latitude"],
-        "longitude": state["longitude"],
-        "type": state["emergency_type"],
-        "status": "active",
-        "created_at": datetime.utcnow().isoformat()  # <-- fix
+# ──────────────────────────────────────────────
+# Node 2 — store incident in Supabase + broadcast over WebSocket
+# ──────────────────────────────────────────────
+
+def store_incident_node(state: EmergencyState) -> EmergencyState:
+    payload = {
+        "message":    state["message"],
+        "latitude":   state["latitude"],
+        "longitude":  state["longitude"],
+        "type":       state["emergency_type"],
+        "status":     "active",
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    result = supabase.table("incidents").insert(data).execute()
+    result = supabase.table("incidents").insert(payload).execute()
+    state["incident_id"] = result.data[0]["id"]
 
-    incident_id = result.data[0]["id"]
-    state["incident_id"] = incident_id
-
-    asyncio.create_task(broadcast(data))
+    # Broadcast to any live dashboard clients (fire-and-forget)
+    asyncio.create_task(broadcast(payload))
 
     return state
 
-# ---------------------------
-# Node: find nearby volunteers
-# ---------------------------
+
+# ──────────────────────────────────────────────
+# Node 3 — find volunteers within 5 km
+# ──────────────────────────────────────────────
+
 def find_nearby_volunteers_node(state: EmergencyState) -> EmergencyState:
-    def haversine(lat1, lon1, lat2, lon2):
-        R = 6371
-        phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        dphi, dlambda = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
-        a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
-        return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    volunteers = (
+        supabase.table("users")
+        .select("id, name, phone_number, latitude, longitude, skill")
+        .execute()
+        .data
+    )
 
-    volunteers = supabase.table("users").select(
-        "id,name,phone_number,latitude,longitude,skill"
-    ).execute().data
-
-    nearby = [v for v in volunteers if haversine(state["latitude"], state["longitude"], v["latitude"], v["longitude"]) <= 5]
-    state["nearby_volunteers"] = nearby
+    state["nearby_volunteers"] = [
+        v for v in volunteers
+        if _haversine_km(
+            state["latitude"], state["longitude"],
+            v["latitude"],     v["longitude"]
+        ) <= 5
+    ]
     return state
 
-# ---------------------------
-# Node: send WhatsApp alerts
-# ---------------------------
+
+# ──────────────────────────────────────────────
+# Node 4 — send real WhatsApp alerts via UltraMsg
+# ──────────────────────────────────────────────
+
 def send_whatsapp_alert_node(state: EmergencyState) -> EmergencyState:
     for volunteer in state["nearby_volunteers"]:
         phone = volunteer.get("phone_number")
-        if phone:
-            link = generate_whatsapp_link(
-                phone,
-                state["incident_id"],
-                state["message"],
-                state["latitude"],
-                state["longitude"]
-            )
-            print(f"\nSend this to {volunteer['name']}:\n{link}\n")
+        if not phone:
+            continue
+
+        success = send_whatsapp_alert(
+            phone=phone,
+            incident_id=state["incident_id"],
+            message=state["message"],
+            lat=state["latitude"],
+            lon=state["longitude"],
+        )
+
+        status = "✅ sent" if success else "❌ failed"
+        print(f"[WhatsApp] → {volunteer['name']} ({phone}): {status}")
+
     return state
 
-# ---------------------------
-# Build workflow
-# ---------------------------
-workflow.add_node("classify_emergency", classify_node)
-workflow.add_node("store_incident", store_incident_node)
-workflow.add_node("find_nearby_volunteers", find_nearby_volunteers_node)
-workflow.add_node("send_whatsapp_alert", send_whatsapp_alert_node)
 
-workflow.add_edge(START, "classify_emergency")
-workflow.add_edge("classify_emergency", "store_incident")
-workflow.add_edge("store_incident", "find_nearby_volunteers")
-workflow.add_edge("find_nearby_volunteers", "send_whatsapp_alert")
-workflow.add_edge("send_whatsapp_alert", END)
+# ──────────────────────────────────────────────
+# Build & compile the graph
+# ──────────────────────────────────────────────
 
-graph_app = workflow.compile()
+_workflow = StateGraph(EmergencyState)
+
+_workflow.add_node("classify_emergency",     classify_node)
+_workflow.add_node("store_incident",         store_incident_node)
+_workflow.add_node("find_nearby_volunteers", find_nearby_volunteers_node)
+_workflow.add_node("send_whatsapp_alert",    send_whatsapp_alert_node)
+
+_workflow.add_edge(START,                    "classify_emergency")
+_workflow.add_edge("classify_emergency",     "store_incident")
+_workflow.add_edge("store_incident",         "find_nearby_volunteers")
+_workflow.add_edge("find_nearby_volunteers", "send_whatsapp_alert")
+_workflow.add_edge("send_whatsapp_alert",    END)
+
+graph_app = _workflow.compile()

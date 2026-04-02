@@ -1,29 +1,32 @@
+# websocket/manager.py
 from fastapi import WebSocket, APIRouter
-from haversine import haversine
 
 router = APIRouter()
-connections = []
+
+# Active WebSocket connections
+_connections: list[WebSocket] = []
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
-    connections.append(ws)
+    _connections.append(ws)
     try:
         while True:
-            await ws.receive_text()  # placeholder
-    except:
-        connections.remove(ws)
+            await ws.receive_text()  # Keep connection alive
+    except Exception:
+        pass
+    finally:
+        _connections.remove(ws)
+
 
 async def broadcast(message: dict):
-    for conn in connections:
+    """Broadcast a JSON message to all connected WebSocket clients."""
+    dead = []
+    for ws in _connections:
         try:
-            await conn.send_json(message)
-        except:
-            connections.remove(conn)
-
-
-async def broadcast_nearby(message, user_lat, user_lon, radius_km=5):
-    for ws, (lat, lon) in connections.items():
-        distance = haversine((user_lat, user_lon), (lat, lon))
-        if distance <= radius_km:
             await ws.send_json(message)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        _connections.remove(ws)

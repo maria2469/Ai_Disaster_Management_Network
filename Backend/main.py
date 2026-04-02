@@ -2,36 +2,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.emergency import router as emergency_router
-# from routes.ws_broadcast import router as websocket_router  # uncomment if using websockets
+from websocket.manager import router as ws_router
 
-app = FastAPI(
-    title="AI Disaster Management Network",
-    version="1.0.0"
-)
+app = FastAPI(title="AI Disaster Management Network", version="1.0.0")
 
-# ---------------------------
-# CORS (allow React frontend)
-# ---------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",  # current setup
-        "http://localhost:3000",  # typical React dev server
-    ],
+    allow_origins=["http://localhost:8080", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---------------------------
-# Routers
-# ---------------------------
 app.include_router(emergency_router, tags=["Emergency"])
-# app.include_router(websocket_router, tags=["WebSocket"])  # optional
+app.include_router(ws_router, tags=["WebSocket"])
 
-# ---------------------------
-# Health check
-# ---------------------------
 @app.get("/")
-def home():
+def health_check():
     return {"status": "AI Disaster Network Backend Running"}

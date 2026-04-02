@@ -1,12 +1,8 @@
 fastapi
-uvicorn
-python-dotenv
+uvicorn[standard]
 supabase
-langchain
 langchain-groq
-pydantic
-websockets
+langchain-core
 langgraph
-dotenv
-langchain_core
-psycopg2-binary
+python-dotenv
+pydantic

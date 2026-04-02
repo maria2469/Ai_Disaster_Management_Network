@@ -3,15 +3,21 @@ import MapView from "@/components/MapView";
 import EmergencyCard from "@/components/EmergencyCard";
 import VolunteerCard from "@/components/VolunteerCard";
 import StatusIndicator from "@/components/StatusIndicator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
-const incidents = [
-  { id: "1", type: "Building Fire", distance: "120m", time: "2 min ago", status: "critical" as const, description: "Person trapped, 3rd floor", responders: 4 },
-  { id: "2", type: "Medical Emergency", distance: "450m", time: "8 min ago", status: "active" as const, description: "Person collapsed", responders: 2 },
-  { id: "3", type: "Flood Warning", distance: "1.2km", time: "15 min ago", status: "pending" as const, description: "Water rising near park", responders: 0 },
-  { id: "4", type: "Car Accident", distance: "800m", time: "22 min ago", status: "resolved" as const, description: "Two vehicles, minor injuries", responders: 3 },
-];
+interface Incident {
+  id: number;
+  emergency_type: string;
+  message: string;
+  latitude: number;
+  longitude: number;
+  status: string;
+  created_at: string;
+}
 
 const volunteers = [
   { name: "Dr. Sarah Chen", skill: "doctor" as const, distance: "200m", available: true },
@@ -20,22 +26,52 @@ const volunteers = [
   { name: "James Wilson", skill: "first-aid" as const, distance: "750m", available: false },
 ];
 
-const mapMarkers = [
-  { id: "e1", x: 55, y: 35, type: "emergency" as const, label: "Fire" },
-  { id: "e2", x: 30, y: 55, type: "emergency" as const, label: "Medical" },
-  { id: "e3", x: 75, y: 70, type: "emergency" as const, label: "Flood" },
-  { id: "r1", x: 48, y: 45, type: "responder" as const },
-  { id: "r2", x: 35, y: 40, type: "responder" as const },
-  { id: "r3", x: 60, y: 55, type: "responder" as const },
-  { id: "r4", x: 42, y: 65, type: "responder" as const },
-];
+function mapStatus(status: string): "critical" | "active" | "pending" | "resolved" {
+  if (status === "critical") return "critical";
+  if (status === "active") return "active";
+  if (status === "resolved") return "resolved";
+  return "pending";
+}
+
+function getTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
 const AuthorityDashboard = () => {
+  const { data: incidents = [], isLoading } = useQuery<Incident[]>({
+    queryKey: ["incidents"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/emergency/all`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  const activeCount = incidents.filter((i) => i.status === "active" || i.status === "critical").length;
+  const respondersCount = incidents.filter((i) => i.status === "active").length;
+  const resolvedCount = incidents.filter((i) => i.status === "resolved").length;
+
+  const mappedIncidents = incidents.map((i) => ({
+    id: String(i.id),
+    type: i.emergency_type || "Emergency",
+    distance: "—",
+    time: getTimeAgo(i.created_at),
+    status: mapStatus(i.status),
+    description: i.message,
+    responders: 0,
+  }));
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <main className="flex flex-col lg:flex-row h-[calc(100vh-4rem)]">
-        {/* Sidebar */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -49,42 +85,48 @@ const AuthorityDashboard = () => {
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-3 gap-2">
             <Card className="border-0 bg-primary/10">
               <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-primary">3</p>
+                <p className="text-2xl font-bold text-primary">{activeCount}</p>
                 <p className="text-[10px] text-muted-foreground">Active</p>
               </CardContent>
             </Card>
             <Card className="border-0 bg-success/10">
               <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-success">9</p>
+                <p className="text-2xl font-bold text-success">{respondersCount}</p>
                 <p className="text-[10px] text-muted-foreground">Responders</p>
               </CardContent>
             </Card>
             <Card className="border-0 bg-muted">
               <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-foreground">1</p>
+                <p className="text-2xl font-bold text-foreground">{resolvedCount}</p>
                 <p className="text-[10px] text-muted-foreground">Resolved</p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Incident list */}
-          <div className="space-y-2">
-            {incidents.map((incident) => (
-              <div key={incident.id} className="space-y-1">
-                <EmergencyCard {...incident} />
-                <div className="flex items-center justify-between px-2 text-xs text-muted-foreground">
-                  <span>{incident.responders} responders</span>
-                  <StatusIndicator status={incident.status} />
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {mappedIncidents.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No incidents reported.</p>
+              )}
+              {mappedIncidents.map((incident) => (
+                <div key={incident.id} className="space-y-1">
+                  <EmergencyCard {...incident} />
+                  <div className="flex items-center justify-between px-2 text-xs text-muted-foreground">
+                    <span>{incident.responders} responders</span>
+                    <StatusIndicator status={incident.status} />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
-          {/* Volunteers */}
           <div>
             <h3 className="mb-2 text-sm font-semibold text-foreground">Active Responders</h3>
             <div className="space-y-2">
@@ -95,9 +137,8 @@ const AuthorityDashboard = () => {
           </div>
         </motion.div>
 
-        {/* Map area */}
         <div className="flex-1 p-4">
-          <MapView markers={mapMarkers} className="h-full min-h-[300px]" showUserLocation={false} />
+          <MapView className="h-full min-h-[300px]" />
         </div>
       </main>
     </div>

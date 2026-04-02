@@ -1,10 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
 import Navbar from "@/components/Navbar";
 import MapView from "@/components/MapView";
-import { Mic, MicOff, MapPin, CheckCircle, Loader2 } from "lucide-react";
+import SkillBadge from "@/components/SkillBadge";
+import { Mic, MicOff, MapPin, CheckCircle, Loader2, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { API_BASE } from "@/lib/api";
 
 type ReportState = "input" | "sending" | "sent";
 
@@ -17,6 +20,7 @@ interface ReportResponse {
     name: string;
     phone_number: string;
     distance_km: number;
+    skill?: string;
   }[];
 }
 
@@ -25,33 +29,56 @@ const EmergencyReport = () => {
   const [text, setText] = useState("");
   const [recording, setRecording] = useState(false);
   const [responseData, setResponseData] = useState<ReportResponse | null>(null);
+  const recognitionRef = useRef<any>(null);
 
-  // User location
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  // Request live location once
   useEffect(() => {
-    if (!navigator.geolocation) {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLatitude(position.coords.latitude);
+          setLongitude(position.coords.longitude);
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+          setLocationError("Please allow location access to send an emergency.");
+        },
+        { enableHighAccuracy: true }
+      );
+    } else {
       setLocationError("Geolocation is not supported by your browser.");
+    }
+  }, []);
+
+  const toggleRecording = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in your browser. Please type your emergency.");
       return;
     }
 
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        setLatitude(position.coords.latitude);
-        setLongitude(position.coords.longitude);
-      },
-      (error) => {
-        console.error("Error getting location:", error);
-        setLocationError("Please allow location access to send an emergency.");
-      },
-      { enableHighAccuracy: true }
-    );
+    if (recording) {
+      recognitionRef.current?.stop();
+      setRecording(false);
+      return;
+    }
 
-    return () => navigator.geolocation.clearWatch(watchId); // cleanup
-  }, []);
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      setText((prev) => (prev ? prev + " " + transcript : transcript));
+    };
+    recognition.onerror = () => setRecording(false);
+    recognition.onend = () => setRecording(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRecording(true);
+  };
 
   const handleSend = async () => {
     if (latitude === null || longitude === null) {
@@ -61,11 +88,9 @@ const EmergencyReport = () => {
 
     setState("sending");
     try {
-      const res = await fetch("http://localhost:8001/emergency/report", {
+      const res = await fetch(`${API_BASE}/emergency/report`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text || "Voice input emergency",
           lat: latitude,
@@ -106,7 +131,7 @@ const EmergencyReport = () => {
               {/* Voice Input */}
               <div className="flex justify-center">
                 <button
-                  onClick={() => setRecording(!recording)}
+                  onClick={toggleRecording}
                   className={`flex h-24 w-24 items-center justify-center rounded-full transition-all ${recording
                       ? "bg-primary text-primary-foreground emergency-pulse"
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -119,7 +144,6 @@ const EmergencyReport = () => {
                 {recording ? "Recording... tap to stop" : "Tap to use voice input"}
               </p>
 
-              {/* Text fallback */}
               <Textarea
                 placeholder='Example: "There is a fire in my apartment and I cannot get out."'
                 value={text}
@@ -127,7 +151,6 @@ const EmergencyReport = () => {
                 className="min-h-[120px] text-base"
               />
 
-              {/* Location */}
               <div className="rounded-lg border border-border bg-card p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <MapPin className="h-4 w-4 text-success" />
@@ -138,13 +161,7 @@ const EmergencyReport = () => {
                     ? `Lat: ${latitude.toFixed(5)}, Lon: ${longitude.toFixed(5)}`
                     : locationError || "Detecting location..."}
                 </p>
-
-                {/* Pass live coordinates to MapView */}
-                <MapView
-                  latitude={latitude}
-                  longitude={longitude}
-                  className="h-48 w-full"
-                />
+                <MapView latitude={latitude} longitude={longitude} className="h-32" />
               </div>
 
               <Button
@@ -152,7 +169,7 @@ const EmergencyReport = () => {
                 size="xl"
                 className="w-full"
                 onClick={handleSend}
-                disabled={!text && !recording || latitude === null || longitude === null}
+                disabled={(!text && !recording) || latitude === null || longitude === null}
               >
                 🚨 SEND EMERGENCY ALERT
               </Button>
@@ -178,7 +195,7 @@ const EmergencyReport = () => {
               key="sent"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="flex min-h-[60vh] flex-col items-center justify-center space-y-4"
+              className="flex min-h-[60vh] flex-col items-center justify-center space-y-6"
             >
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-success/15">
                 <CheckCircle className="h-10 w-10 text-success" />
@@ -187,12 +204,32 @@ const EmergencyReport = () => {
               <p className="text-center text-sm text-muted-foreground">
                 Nearby responders are being notified.<br />Stay calm and stay safe.
               </p>
-              {responseData && (
-                <p className="text-sm font-medium text-success">
-                  {responseData.nearby_volunteers.length} responders notified successfully
-                </p>
+
+              {responseData && responseData.nearby_volunteers.length > 0 && (
+                <div className="w-full space-y-2">
+                  <p className="text-sm font-semibold text-foreground text-center">
+                    {responseData.nearby_volunteers.length} Responders Notified
+                  </p>
+                  {responseData.nearby_volunteers.map((vol) => (
+                    <Card key={vol.id} className="border-0 shadow-sm">
+                      <CardContent className="flex items-center gap-3 p-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+                          <User className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-foreground">{vol.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {vol.distance_km.toFixed(1)} km away
+                          </p>
+                        </div>
+                        {vol.skill && <SkillBadge skill={vol.skill as any} />}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               )}
-              <Button variant="secondary" size="lg" onClick={() => setState("input")}>
+
+              <Button variant="secondary" size="lg" onClick={() => { setState("input"); setText(""); setResponseData(null); }}>
                 Report Another Emergency
               </Button>
             </motion.div>

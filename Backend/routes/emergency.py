@@ -1,26 +1,28 @@
+# routes/emergency.py
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Dict
-from DB.client import supabase
+from typing import List
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from db.client import supabase
 from graph.emergency_graph import graph_app
 
 router = APIRouter(prefix="/emergency")
-
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# ---------------------------
-# Pydantic Models
-# ---------------------------
+
+# ──────────────────────────────────────────────
+# Schemas
+# ──────────────────────────────────────────────
+
 class IncidentReport(BaseModel):
     message: str
     lat: float
     lon: float
-    type: str = "general"
-    status: str = "active"
+
 
 class IncidentResponse(BaseModel):
     id: int
@@ -31,71 +33,63 @@ class IncidentResponse(BaseModel):
     type: str
     status: str
 
-# ---------------------------
-# Helper: serialize JSON-unfriendly types
-# ---------------------------
-def serialize_incident(incident: dict) -> dict:
-    serialized = {}
-    for k, v in incident.items():
-        if isinstance(v, datetime):
-            serialized[k] = v.isoformat()
-        elif isinstance(v, Decimal):
-            serialized[k] = float(v)
-        else:
-            serialized[k] = v
-    return serialized
-# ---------------------------
-# GET /emergency/all  <-- NEW
-# ---------------------------
+
+# ──────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────
+
+def _serialize(incident: dict) -> dict:
+    """Coerce Decimal/datetime values so Pydantic can validate them."""
+    return {
+        k: (v.isoformat() if isinstance(v, datetime) else float(v) if isinstance(v, Decimal) else v)
+        for k, v in incident.items()
+    }
+
+
+# ──────────────────────────────────────────────
+# Endpoints
+# ──────────────────────────────────────────────
+
 @router.get("/all", response_model=List[IncidentResponse])
 async def get_all_incidents():
+    """Return all incidents, newest first."""
     result = supabase.table("incidents").select("*").order("created_at", desc=True).execute()
-    if not result.data:
-        return []  # no incidents yet
+    return [IncidentResponse(**_serialize(i)) for i in (result.data or [])]
 
-    incidents = [serialize_incident(i) for i in result.data]
-    return [IncidentResponse(**i) for i in incidents]
 
-# ---------------------------
-# GET /emergency/{id}
-# ---------------------------
 @router.get("/{incident_id}", response_model=IncidentResponse)
 async def get_incident(incident_id: int):
+    """Return a single incident by ID."""
     result = supabase.table("incidents").select("*").eq("id", incident_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Incident not found")
-
-    incident = serialize_incident(result.data[0])
-    return IncidentResponse(**incident)
+    return IncidentResponse(**_serialize(result.data[0]))
 
 
-# ---------------------------
-# POST /emergency/report
-# ---------------------------
 @router.post("/report")
 async def report_incident(report: IncidentReport):
-    # Initial state for LangGraph workflow
+    """
+    Run the full LangGraph pipeline:
+      classify → store → find volunteers → send WhatsApp alerts
+    Returns incident details and the list of nearby volunteers.
+    """
     initial_state = {
         "message": report.message,
         "latitude": report.lat,
         "longitude": report.lon,
-        "emergency_type": "",   # will be classified
-        "incident_id": 0,       # will be set in store node
-        "nearby_volunteers": []
+        "emergency_type": "",
+        "incident_id": 0,
+        "nearby_volunteers": [],
     }
 
-    # Run the workflow
     final_state = graph_app.invoke(initial_state)
 
-    # Prepare response
-    volunteers_info: List[Dict] = [
+    volunteers_info = [
         {
             "id": v["id"],
             "name": v["name"],
             "phone_number": v["phone_number"],
-            "distance_km": round(
-                ((report.lat - v["latitude"])**2 + (report.lon - v["longitude"])**2)**0.5, 2
-            )
+            "skill": v.get("skill"),
         }
         for v in final_state["nearby_volunteers"]
     ]
@@ -104,5 +98,5 @@ async def report_incident(report: IncidentReport):
         "status": "success",
         "incident_id": final_state["incident_id"],
         "emergency_type": final_state["emergency_type"],
-        "nearby_volunteers": volunteers_info
+        "nearby_volunteers": volunteers_info,
     }

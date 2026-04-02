@@ -1,110 +1,175 @@
-import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import Navbar from "@/components/Navbar";
+import MapView from "@/components/MapView";
+import StatusIndicator from "@/components/StatusIndicator";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, MapPin, Clock, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { useState } from "react";
+import { API_BASE } from "@/lib/api";
 
-// Define type for the incident object
 interface Incident {
     id: number;
+    emergency_type: string;
     message: string;
     latitude: number;
     longitude: number;
-    type: string;
     status: string;
-    created_at?: string;
+    created_at: string;
 }
 
-export default function EmergencyPage() {
-    const { id } = useParams<{ id: string }>(); // id from URL params
+function getTimeAgo(dateStr: string): string {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function mapStatus(status: string): "critical" | "active" | "pending" | "resolved" {
+    if (status === "critical") return "critical";
+    if (status === "active") return "active";
+    if (status === "resolved") return "resolved";
+    return "pending";
+}
+
+const EmergencyPage = () => {
+    const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const [accepted, setAccepted] = useState(false);
 
-    const [incident, setIncident] = useState<Incident | null>(null);
-    const alarmRef = useRef<HTMLAudioElement | null>(null);
+    const { data: incident, isLoading, error } = useQuery<Incident>({
+        queryKey: ["incident", id],
+        queryFn: async () => {
+            const res = await fetch(`${API_BASE}/emergency/${id}`);
+            if (!res.ok) throw new Error("Failed to fetch incident");
+            return res.json();
+        },
+    });
 
-    // Fetch incident from backend
-    useEffect(() => {
-        if (!id) return;
-        fetch(`http://localhost:8001/emergency/${id}`)
-            .then((res) => res.json())
-            .then((data: Incident) => setIncident(data))
-            .catch((err) => console.error("Failed to fetch incident:", err));
-    }, [id]);
-
-    // Play alarm sound
-    useEffect(() => {
-        if (incident) {
-            alarmRef.current = new Audio("/alarm.mp3");
-            alarmRef.current.loop = true;
-            alarmRef.current.play().catch(() => console.log("Autoplay prevented"));
-        }
-        return () => {
-            if (alarmRef.current) alarmRef.current.pause();
-        };
-    }, [incident]);
-
-    if (!incident)
+    if (isLoading) {
         return (
-            <div className="flex items-center justify-center min-h-screen text-gray-100 font-bold text-xl bg-gradient-to-br from-red-700 via-red-600 to-red-800">
-                Loading emergency...
-            </div>
-        );
-
-    const handleAccept = () => {
-        if (alarmRef.current) alarmRef.current.pause();
-        navigate("/dashboard"); // navigate to main dashboard
-    };
-
-    const handleDecline = () => {
-        if (alarmRef.current) alarmRef.current.pause();
-        alert("You declined to help.");
-    };
-
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-700 via-red-600 to-red-800 px-4 animate-pulse">
-            <div className="bg-white rounded-3xl shadow-3xl max-w-md w-full p-6 md:p-8 text-center border-8 border-red-600">
-                <div className="flex flex-col items-center">
-                    <div className="text-7xl animate-bounce mb-4">🚨</div>
-                    <h1 className="text-4xl font-extrabold text-red-700 mb-4 tracking-wide">
-                        EMERGENCY ALERT
-                    </h1>
-                    <p className="text-gray-800 mb-6 font-semibold text-lg">
-                        Someone nearby needs your help immediately!
-                    </p>
-
-                    <div className="bg-gradient-to-r from-red-200 via-yellow-200 to-orange-200 rounded-xl p-5 mb-6 w-full text-left border-l-8 border-red-600 shadow-lg">
-                        <p className="font-bold text-red-700 mb-1">Message:</p>
-                        <p className="text-gray-800 mb-2">{incident.message}</p>
-                        <p className="font-bold text-red-700 mb-1">Type:</p>
-                        <p className="text-gray-800">{incident.type}</p>
-                        <p className="font-bold text-red-700 mt-2">Location:</p>
-                        <p className="text-gray-800">
-                            {incident.latitude}, {incident.longitude}
-                        </p>
-                    </div>
-
-                    <a
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${incident.latitude},${incident.longitude}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full mb-6 inline-block bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition duration-200 shadow-lg"
-                    >
-                        Open Navigation
-                    </a>
-
-                    <div className="flex gap-4 w-full">
-                        <button
-                            onClick={handleAccept}
-                            className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold transition duration-200 shadow-lg"
-                        >
-                            ACCEPT HELP
-                        </button>
-                        <button
-                            onClick={handleDecline}
-                            className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold transition duration-200 shadow-lg"
-                        >
-                            DECLINE
-                        </button>
-                    </div>
+            <div className="min-h-screen bg-background">
+                <Navbar />
+                <div className="flex min-h-[60vh] items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
             </div>
+        );
+    }
+
+    if (error || !incident) {
+        return (
+            <div className="min-h-screen bg-background">
+                <Navbar />
+                <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
+                    <p className="text-muted-foreground">Incident not found</p>
+                    <Button variant="outline" onClick={() => navigate("/dashboard")}>Back to Dashboard</Button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-background">
+            <Navbar />
+
+            {/* Alert banner */}
+            <div className="gradient-emergency px-4 py-3 text-center">
+                <div className="flex items-center justify-center gap-2 text-primary-foreground">
+                    <AlertTriangle className="h-5 w-5" />
+                    <span className="font-bold text-lg">🚨 EMERGENCY NEAR YOU</span>
+                </div>
+            </div>
+
+            <main className="container max-w-lg px-4 py-6 space-y-6">
+                {!accepted ? (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="space-y-6"
+                    >
+                        <Card className="border-l-4 border-l-primary shadow-lg border-0">
+                            <CardContent className="p-5 space-y-4">
+                                <div className="flex items-start justify-between">
+                                    <div>
+                                        <h3 className="font-bold text-foreground text-lg">{incident.emergency_type || "Emergency"}</h3>
+                                        <StatusIndicator status={mapStatus(incident.status)} />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-lg bg-muted p-3">
+                                        <p className="text-xs text-muted-foreground">Location</p>
+                                        <p className="text-sm font-bold text-foreground flex items-center gap-1">
+                                            <MapPin className="h-4 w-4" />
+                                            {incident.latitude.toFixed(4)}, {incident.longitude.toFixed(4)}
+                                        </p>
+                                    </div>
+                                    <div className="rounded-lg bg-muted p-3">
+                                        <p className="text-xs text-muted-foreground">Reported</p>
+                                        <p className="text-sm font-bold text-foreground flex items-center gap-1">
+                                            <Clock className="h-4 w-4" /> {getTimeAgo(incident.created_at)}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-lg bg-primary/5 border border-primary/20 p-3">
+                                    <p className="text-sm font-medium text-foreground">{incident.message}</p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        {new Date(incident.created_at).toLocaleString()}
+                                    </p>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <MapView latitude={incident.latitude} longitude={incident.longitude} className="h-48" />
+
+                        <div className="space-y-3">
+                            <Button
+                                variant="emergency"
+                                size="xl"
+                                className="w-full"
+                                onClick={() => setAccepted(true)}
+                            >
+                                Accept Rescue Task
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                className="w-full"
+                                onClick={() => navigate("/dashboard")}
+                            >
+                                Decline
+                            </Button>
+                        </div>
+                    </motion.div>
+                ) : (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex min-h-[50vh] flex-col items-center justify-center space-y-4 text-center"
+                    >
+                        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-success/15">
+                            <MapPin className="h-10 w-10 text-success" />
+                        </div>
+                        <h2 className="text-xl font-bold text-foreground">Task Accepted</h2>
+                        <p className="text-sm text-muted-foreground">
+                            Navigate to the emergency location.<br />Stay safe and follow protocols.
+                        </p>
+                        <MapView latitude={incident.latitude} longitude={incident.longitude} className="h-48 w-full" />
+                        <Button variant="outline" size="lg" onClick={() => setAccepted(false)}>
+                            Cancel Response
+                        </Button>
+                    </motion.div>
+                )}
+            </main>
         </div>
     );
-}
+};
+
+export default EmergencyPage;
