@@ -8,8 +8,8 @@ app = FastAPI(title="AI Disaster Management Network", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://localhost:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],          # allow all origins in dev
+    allow_credentials=False,      # must be False when allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
