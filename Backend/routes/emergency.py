@@ -89,8 +89,8 @@ async def _timeout_rebroadcast(incident_id: int, lat: float, lon: float,
 
     all_volunteers = (
         supabase.table("users")
-        .select("id, name, phone_number, latitude, longitude, skill, is_available")
-        .eq("is_available", True)
+        .select("id, name, phone_number, latitude, longitude, skill, status, responses_count")
+        .eq("status", "available")
         .execute()
         .data
     )

@@ -6,3 +6,4 @@ langchain-core
 langgraph
 python-dotenv
 pydantic
+supabase

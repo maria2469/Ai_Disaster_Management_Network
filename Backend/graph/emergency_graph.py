@@ -96,41 +96,56 @@ def store_incident_node(state: EmergencyState) -> EmergencyState:
 # ──────────────────────────────────────────────
 
 def find_nearby_volunteers_node(state: EmergencyState) -> EmergencyState:
+    # Fetch only AVAILABLE volunteers
     volunteers = (
         supabase.table("users")
-        .select("id, name, phone_number, latitude, longitude, skill, is_available, responses_count")
-        .eq("is_available", True)   # only available volunteers
+        .select("id, name, phone_number, latitude, longitude, skill, status, responses_count")
+        .eq("status", "available")   # ✅ FIXED (was is_available)
         .execute()
         .data
     )
 
     matched = []
     for v in volunteers:
+        # Skip invalid coordinates (important safety)
+        if v.get("latitude") is None or v.get("longitude") is None:
+            continue
+
         distance = _haversine_km(
             state["latitude"], state["longitude"],
             v["latitude"],     v["longitude"]
         )
+
         skill_ok = _skill_matches(v.get("skill", ""), state["emergency_type"])
 
         if distance <= 5 and skill_ok:
-            matched.append({**v, "distance_km": round(distance, 2)})
+            matched.append({
+                **v,
+                "distance_km": round(distance, 2)
+            })
 
-    # Sort by distance — closest first
+    # Sort by nearest first
     matched.sort(key=lambda v: v["distance_km"])
+
     state["nearby_volunteers"] = matched
-
     return state
-
-
 # ──────────────────────────────────────────────
 # Node 4 — send WhatsApp alerts to matched volunteers
 # ──────────────────────────────────────────────
 
 def send_whatsapp_alert_node(state: EmergencyState) -> EmergencyState:
+    print("🔥 WhatsApp NODE EXECUTING")
     for volunteer in state["nearby_volunteers"]:
-        phone = volunteer.get("phone_number")
-        if not phone:
-            continue
+        phone = str(volunteer.get("phone_number"))
+
+        # 🔥 FIX: normalize Pakistan number
+        if not phone.startswith("+"):
+            if phone.startswith("0"):
+                phone = "+92" + phone[1:]
+            else:
+                phone = "+92" + phone
+
+        print("[DEBUG WhatsApp]", phone)
 
         success = send_volunteer_alert(
             phone=phone,
@@ -139,8 +154,8 @@ def send_whatsapp_alert_node(state: EmergencyState) -> EmergencyState:
             lat=state["latitude"],
             lon=state["longitude"],
         )
-        status = "✅ sent" if success else "❌ failed"
-        print(f"[WhatsApp] → {volunteer['name']} ({volunteer.get('skill', '?')}): {status}")
+
+        print(f"[WhatsApp] → {volunteer['name']} → {'SENT' if success else 'FAILED'}")
 
     return state
 
