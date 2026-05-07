@@ -130,7 +130,8 @@ const EmergencyReport = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="container max-w-lg px-4 py-6">
+
+      <main className="min-h-screen flex items-center justify-center px-4 py-8">
         <AnimatePresence mode="wait">
 
           {/* ── INPUT ── */}
@@ -140,11 +141,15 @@ const EmergencyReport = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="space-y-6"
+              className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-lg p-6 space-y-6"
             >
               <div className="text-center">
-                <h1 className="text-2xl font-bold text-foreground">Report Emergency</h1>
-                <p className="text-sm text-muted-foreground mt-1">Describe what's happening</p>
+                <h1 className="text-2xl font-bold text-foreground">
+                  Report Emergency
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Describe what's happening
+                </p>
               </div>
 
               {/* Voice button */}
@@ -156,11 +161,18 @@ const EmergencyReport = () => {
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                 >
-                  {recording ? <MicOff className="h-10 w-10" /> : <Mic className="h-10 w-10" />}
+                  {recording ? (
+                    <MicOff className="h-10 w-10" />
+                  ) : (
+                    <Mic className="h-10 w-10" />
+                  )}
                 </button>
-                <p className="text-xs text-muted-foreground">
+
+                <p className="text-xs text-muted-foreground text-center">
                   {recognition
-                    ? recording ? "Recording… tap to stop" : "Tap to use voice"
+                    ? recording
+                      ? "Recording… tap to stop"
+                      : "Tap to use voice"
                     : "Voice not supported in this browser"}
                 </p>
               </div>
@@ -173,11 +185,12 @@ const EmergencyReport = () => {
                 className="min-h-[120px] text-base"
               />
 
-              {/* Phone number — so victim can receive WhatsApp updates */}
+              {/* Phone */}
               <div className="space-y-1">
                 <label className="text-sm font-medium text-foreground flex items-center gap-2">
                   <Phone className="h-4 w-4" /> Your WhatsApp Number
                 </label>
+
                 <Input
                   placeholder="923001234567 (no + sign)"
                   value={phone}
@@ -185,23 +198,32 @@ const EmergencyReport = () => {
                   type="tel"
                   inputMode="numeric"
                 />
+
                 <p className="text-xs text-muted-foreground">
                   You'll receive WhatsApp updates when a helper accepts your request
                 </p>
               </div>
 
               {/* Location */}
-              <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-success" />
-                  <span className="text-sm font-medium text-foreground">Your Location</span>
+                  <span className="text-sm font-medium text-foreground">
+                    Your Location
+                  </span>
                 </div>
+
                 <p className="text-xs text-muted-foreground">
                   {latitude && longitude
                     ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
                     : locationError || "Detecting…"}
                 </p>
-                <MapView latitude={latitude} longitude={longitude} className="h-48 w-full" />
+
+                <MapView
+                  latitude={latitude}
+                  longitude={longitude}
+                  className="h-48 w-full rounded-md"
+                />
               </div>
 
               <Button
@@ -222,11 +244,13 @@ const EmergencyReport = () => {
               key="sending"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="flex min-h-[60vh] flex-col items-center justify-center space-y-4"
+              className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-lg p-10 flex flex-col items-center justify-center space-y-4"
             >
               <Loader2 className="h-12 w-12 animate-spin text-primary" />
-              <p className="text-lg font-semibold text-foreground">Sending alert…</p>
-              <p className="text-sm text-muted-foreground">Finding nearby responders</p>
+              <p className="text-lg font-semibold">Sending alert…</p>
+              <p className="text-sm text-muted-foreground text-center">
+                Finding nearby responders
+              </p>
             </motion.div>
           )}
 
@@ -236,49 +260,59 @@ const EmergencyReport = () => {
               key="sent"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="space-y-6"
+              className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-lg p-6 space-y-6"
             >
               <div className="flex flex-col items-center text-center space-y-3">
                 <div className="flex h-20 w-20 items-center justify-center rounded-full bg-success/15">
                   <CheckCircle className="h-10 w-10 text-success" />
                 </div>
-                <h2 className="text-xl font-bold text-foreground">Emergency Alert Sent</h2>
+
+                <h2 className="text-xl font-bold">Emergency Alert Sent</h2>
+
                 <p className="text-sm text-muted-foreground">
-                  Nearby responders are being notified.<br />You'll receive a WhatsApp update when someone accepts.
+                  Nearby responders are being notified.
+                  <br />
+                  You'll receive a WhatsApp update when someone accepts.
                 </p>
               </div>
 
-              {/* Notified volunteers list */}
-              {responseData && responseData.nearby_volunteers.length > 0 && (
+              {/* Volunteers */}
+              {responseData?.nearby_volunteers?.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold text-foreground">
-                    {responseData.nearby_volunteers.length} responder{responseData.nearby_volunteers.length > 1 ? "s" : ""} alerted
+                  <p className="text-sm font-semibold">
+                    {responseData.nearby_volunteers.length} responder
+                    {responseData.nearby_volunteers.length > 1 ? "s" : ""} alerted
                   </p>
+
                   {responseData.nearby_volunteers.map((v) => (
                     <div
                       key={v.id}
-                      className="flex items-center gap-3 rounded-lg border border-border bg-card p-3"
+                      className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-3"
                     >
                       <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
                         <User className="h-4 w-4 text-primary" />
                       </div>
+
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-foreground">{v.name}</p>
-                        <p className="text-xs text-muted-foreground">{skillLabel(v.skill)}</p>
+                        <p className="text-sm font-medium">{v.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {skillLabel(v.skill)}
+                        </p>
                       </div>
-                      <span className="text-xs text-muted-foreground">{v.distance_km} km</span>
+
+                      <span className="text-xs text-muted-foreground">
+                        {v.distance_km} km
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
 
-              {responseData && responseData.nearby_volunteers.length === 0 && (
-                <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4 text-sm text-yellow-800">
-                  ⚠️ No skill-matched volunteers found nearby. The system will automatically search a wider area in 3 minutes.
-                </div>
-              )}
-
-              <Button variant="secondary" size="lg" className="w-full" onClick={() => setState("input")}>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => setState("input")}
+              >
                 Report Another Emergency
               </Button>
             </motion.div>

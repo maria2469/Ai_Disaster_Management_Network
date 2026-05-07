@@ -1,14 +1,17 @@
+import React from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
+// Pages
 import Dashboard from "./pages/Dashboard";
 import EmergencyReport from "./pages/EmergencyReport";
 import EmergencyAlert from "./pages/EmergencyAlert";
 import AuthorityDashboard from "./pages/AuthorityDashboard";
 import EmergencyPage from "./pages/EmergencyPage";
+import AnalyticsPage from "./pages/AnalyticsPage"; // ⭐ NEW PAGE
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,7 +26,7 @@ const App: React.FC = () => {
         <BrowserRouter>
           <Routes>
 
-            {/* DEFAULT ROUTE (you can change this) */}
+            {/* DEFAULT ROUTE */}
             <Route path="/" element={<Dashboard />} />
 
             {/* USER DASHBOARD */}
@@ -37,6 +40,9 @@ const App: React.FC = () => {
 
             {/* AUTHORITY DASHBOARD */}
             <Route path="/authority" element={<AuthorityDashboard />} />
+
+            {/* ⭐ NEW: BIG DATA ANALYTICS DASHBOARD */}
+            <Route path="/analytics" element={<AnalyticsPage />} />
 
             {/* VOLUNTEER EMERGENCY PAGE */}
             <Route path="/emergency/:id" element={<EmergencyPage />} />
